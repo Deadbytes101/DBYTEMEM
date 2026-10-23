@@ -12,6 +12,7 @@ $definitions = @(
     @('src\dbmem_disk.c','dbmem_disk',''),
     @('src\dbmem_watch.c','dbmem_watch','shell32.lib user32.lib'),
     @('src\dbmem_pressure.c','dbmem_pressure','psapi.lib'),
+    @('src\dbmem_pressure_watch.c','dbmem_pressure_watch','psapi.lib shell32.lib user32.lib'),
     @('tests\test_arena.c','arena_test',''),
     @('tests\test_vm_win.c','arena_win_test',''),
     @('tests\test_policy_contract.c','policy_contract_test',''),
@@ -42,7 +43,7 @@ foreach ($n in @('arena_test','arena_win_test','policy_contract_test','policy_wi
     $lines.Add('test_' + $n + '=PASS')
     if ($n -eq 'bench_alloc_win') { foreach ($line in $output) { $lines.Add('bench_' + $line) } }
 }
-foreach ($n in @('dbmem_policy','dbmem','dbmem_disk','dbmem_watch','dbmem_pressure')) {
+foreach ($n in @('dbmem_policy','dbmem','dbmem_disk','dbmem_watch','dbmem_pressure','dbmem_pressure_watch')) {
     $exe = Join-Path $build ($n + '.exe')
     & $env:ComSpec /d /s /c ('"' + $exe + '" --help >NUL 2>&1')
     if ($LASTEXITCODE -ne 0) { throw ('help failed ' + $n) }
@@ -198,6 +199,75 @@ foreach($bad in @('--interval-ms 99','--interval-ms 1001','--interval-ms +250','
     if ($LASTEXITCODE -ne 1) { throw ('R7 invalid CLI accepted '+$bad) }
 }
 $lines.Add('test_dbmem_pressure=PASS')
+$watch8=Join-Path $build 'dbmem_pressure_watch.exe'
+$r8Dir=Join-Path $build ('r8-pressure-watch-' + [guid]::NewGuid().ToString('N'))
+[IO.Directory]::CreateDirectory($r8Dir)|Out-Null
+$r8Ok=@('--interval-ms','100','--warn-physical-percent','2','--critical-physical-percent','1',
+        '--warn-commit-headroom-percent','2','--critical-commit-headroom-percent','1')
+$r8Warn=@('--interval-ms','100','--warn-physical-percent','99','--critical-physical-percent','1',
+          '--warn-commit-headroom-percent','99','--critical-commit-headroom-percent','1')
+$r8Critical=@('--interval-ms','100','--warn-physical-percent','99','--critical-physical-percent','98',
+              '--warn-commit-headroom-percent','99','--critical-commit-headroom-percent','98')
+function Test-R8([string[]]$opts,[int]$code,[string]$status,[string]$previous) {
+    $o=@(& $watch8 --no-notify --state-dir $r8Dir @opts)
+    if($LASTEXITCODE -ne $code -or $o.Count -ne 5 -or
+       $o[0] -cne ('status='+$status) -or
+       $o[1] -cne ('previous='+$previous)) {
+        throw ('R8 transition invalid expected '+$previous+' -> '+$status+' rc='+$LASTEXITCODE)
+    }
+}
+Test-R8 $r8Ok 0 'OK' 'UNKNOWN'
+Test-R8 $r8Warn 3 'WARN' 'OK'
+Test-R8 $r8Warn 3 'WARN' 'WARN'
+Test-R8 $r8Critical 4 'CRITICAL' 'WARN'
+Test-R8 $r8Ok 0 'OK' 'CRITICAL'
+$r8File=Join-Path $r8Dir 'state.txt'
+$r8Lines=@(Get-Content -LiteralPath $r8File)
+if($r8Lines[0] -cne 'DBMEM_PRESSURE_WATCH_V1 OK' -or
+   @($r8Lines|Where-Object {$_ -like 'EVENT *'}).Count -ne 4) {
+    throw 'R8 journal transition or state malformed'
+}
+$r8Bad=Join-Path $r8Dir 'corrupt'
+[IO.Directory]::CreateDirectory($r8Bad)|Out-Null
+$r8BadFile=Join-Path $r8Bad 'state.txt'
+[IO.File]::WriteAllText($r8BadFile,'garbled',[Text.Encoding]::ASCII)
+$badHash=(Get-FileHash -LiteralPath $r8BadFile -Algorithm SHA256).Hash
+& $env:ComSpec /d /s /c ('"' + $watch8 + '" --no-notify --state-dir "'+$r8Bad+'" --interval-ms 100 --warn-physical-percent 2 --critical-physical-percent 1 --warn-commit-headroom-percent 2 --critical-commit-headroom-percent 1 >NUL 2>&1')
+if($LASTEXITCODE -ne 2 -or (Get-FileHash -LiteralPath $r8BadFile -Algorithm SHA256).Hash -ne $badHash) {
+    throw 'R8 corrupted state accepted or overwritten'
+}
+$originalR8=(Get-Content -LiteralPath $r8File -Raw)
+foreach($case in @(
+    @('(?m)^SNAPSHOT \d+','SNAPSHOT -1'),
+    @('(?m)^EVENT \d+','EVENT -1'),
+    @('(?m)^EVENT \d+','EVENT 18446744073709551616')
+)) {
+    $mutated=$originalR8 -replace $case[0],$case[1]
+    if($mutated -ceq $originalR8){throw 'R8 lexical fixture not mutated'}
+    [IO.File]::WriteAllText($r8BadFile,$mutated,[Text.UTF8Encoding]::new($false))
+    $before=(Get-FileHash -LiteralPath $r8BadFile -Algorithm SHA256).Hash
+    & $env:ComSpec /d /s /c ('"' + $watch8 + '" --no-notify --state-dir "'+$r8Bad+'" --interval-ms 100 --warn-physical-percent 2 --critical-physical-percent 1 --warn-commit-headroom-percent 2 --critical-commit-headroom-percent 1 >NUL 2>&1')
+    if($LASTEXITCODE -ne 2 -or (Get-FileHash -LiteralPath $r8BadFile -Algorithm SHA256).Hash -ne $before) {
+        throw ('R8 malformed numeric journal accepted '+$case[1])
+    }
+}
+foreach($bad in @('--interval-ms 0','--interval-ms +100','--interval-ms 100 --interval-ms 100',
+                  '--warn-physical-percent 20 --critical-physical-percent 20')) {
+    & $env:ComSpec /d /s /c ('"' + $watch8 + '" ' + $bad + ' >NUL 2>&1')
+    if($LASTEXITCODE -ne 1) { throw ('R8 bad CLI accepted '+$bad) }
+}
+for($i=0;$i -lt 102;$i++){
+    $opts=if(($i%2)-eq 0){$r8Critical}else{$r8Ok}
+    & $watch8 --no-notify --state-dir $r8Dir @opts | Out-Null
+    $expected=if(($i%2)-eq 0){4}else{0}
+    if($LASTEXITCODE -ne $expected){throw ('R8 ring run failed '+$i)}
+}
+$r8Lines=@(Get-Content -LiteralPath $r8File)
+if(@($r8Lines|Where-Object {$_ -like 'EVENT *'}).Count -ne 100 -or
+   $r8Lines[0] -cne 'DBMEM_PRESSURE_WATCH_V1 OK') {
+    throw 'R8 bounded journal ring failure'
+}
+$lines.Add('test_dbmem_pressure_watch=PASS')
 foreach ($entry in $definitions) {
     $exe = Join-Path $build ($entry[1] + '.exe')
     $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash.ToLowerInvariant()

@@ -19,6 +19,7 @@ cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem_series.c /Fe:dbmem_series.exe /lin
 cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem_disk.c /Fe:dbmem_disk.exe
 cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem_watch.c /Fe:dbmem_watch.exe /link shell32.lib user32.lib
 cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem_pressure.c /Fe:dbmem_pressure.exe /link psapi.lib
+cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem_pressure_watch.c /Fe:dbmem_pressure_watch.exe /link psapi.lib shell32.lib user32.lib
 cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_pressure_policy.c /Fe:pressure_policy_test.exe
 cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_policy_contract.c /Fe:policy_contract_test.exe
 cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_series_args.c /Fe:series_args_test.exe
@@ -88,6 +89,10 @@ by default warn below 15% available. report critical below 10% or below 5 GiB fr
 ## R7 memory pressure inspection
 
 `dbmem_pressure.exe` classifies physical available memory and system-wide commit headroom using 3 Win32 snapshots. the median of the 3 severity ranks is returned as exit 0 OK, 3 WARN or 4 CRITICAL; invalid input is 1 and API failure is 2. this is read-only and not an automatic RAM cleaner. see `docs/PRESSURE-R7.md` for thresholds, unit semantics and limitations.
+
+## R8 memory pressure watch
+
+`dbmem_pressure_watch.exe` samples R7 memory pressure and records the current status and 100 recent transitions in one atomic local file. it attempts a Windows tray balloon on new WARN or CRITICAL states and never purges RAM. see `docs/PRESSURE-WATCH-R8.md` for usage, native tests, consent boundary and optional Scheduled Task rollback.
 
 ## metrics
 
