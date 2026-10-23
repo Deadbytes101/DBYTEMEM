@@ -14,8 +14,13 @@ use the Visual Studio 2022 x64 Native Tools Command Prompt
 cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem.c /Fe:dbmem.exe /link psapi.lib
 cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_arena.c /Fe:arena_test.exe
 cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_vm_win.c /Fe:arena_win_test.exe
+cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem_policy.c /Fe:dbmem_policy.exe
+cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_policy_contract.c /Fe:policy_contract_test.exe
+cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_policy_win.c /Fe:policy_win_test.exe
 arena_test.exe
 arena_win_test.exe
+policy_contract_test.exe
+policy_win_test.exe
 dbmem.exe
 ```
 
@@ -29,6 +34,17 @@ R1 provides `src/arena.h` for caller-owned bounded arenas and `src/arena_win.h` 
 
 R1 is **experimental**. it is not a drop-in replacement for `malloc` and does not promise higher performance. callers must serialize access; neither arena is thread-safe.
 
+## process memory policy - R2
+
+`dbmem_policy.exe` reads memory priority without changing the target by default
+
+```bat
+dbmem_policy.exe inspect --pid 1234
+dbmem_policy.exe plan --pid 1234 --to 2
+```
+
+R2 also contains opt-in apply and restore. both require explicit `--confirm`. apply pins PID plus creation FILETIME and existing priority from a fresh plan. it flushes a unique recovery journal before calling `SetProcessInformation`. restore refuses PID reuse and unexpected third-party changes. the journal remains on disk for inspection even after restore. see `docs/POLICY-R2.md` for exact commands and limits.
+
 ## metrics
 
 - physical available includes memory Windows can reclaim; used RAM is not a synonym for performance loss
@@ -39,7 +55,7 @@ R1 is **experimental**. it is not a drop-in replacement for `malloc` and does no
 
 ## safety
 
-no elevated privileges, driver, DLL injection, memory purge, registry writes, service changes, automatic tuning, or remote process changes. no persistent system changes. Windows is still responsible for virtual memory accounting and physical page assignment.
+no required elevation, driver, DLL injection, memory purge, registry writes, service changes, or automatic tuning. R0/R1 do not change other processes. R2 changes only one explicitly selected process when the operator supplies the full guarded apply command; recovery is manual and keeps a journal. Windows is still responsible for virtual memory accounting and physical page assignment.
 
 ## verification boundary
 

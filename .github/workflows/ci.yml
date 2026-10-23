@@ -11,10 +11,14 @@ jobs:
         run: |
           gcc -std=c11 -Wall -Wextra -Werror -pedantic -O2 tests/test_arena.c -o arena_test
           ./arena_test
+          gcc -std=c11 -Wall -Wextra -Werror -pedantic -O2 tests/test_policy_contract.c -o policy_contract_test
+          ./policy_contract_test
       - name: Clang sanitizers and tests
         run: |
           clang -std=c11 -Wall -Wextra -Werror -pedantic -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_arena.c -o arena_san
           ./arena_san
+          clang -std=c11 -Wall -Wextra -Werror -pedantic -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_policy_contract.c -o policy_contract_san
+          ./policy_contract_san
   windows-native:
     runs-on: windows-2022
     steps:
@@ -29,6 +33,14 @@ jobs:
           if errorlevel 1 exit /b 1
           cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_vm_win.c /Fe:arena_win_test.exe
           if errorlevel 1 exit /b 1
+          cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem_policy.c /Fe:dbmem_policy.exe
+          if errorlevel 1 exit /b 1
+          cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_policy_contract.c /Fe:policy_contract_test.exe
+          if errorlevel 1 exit /b 1
+          cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_policy_win.c /Fe:policy_win_test.exe
+          if errorlevel 1 exit /b 1
+          policy_contract_test.exe
+          if errorlevel 1 exit /b 1
           arena_test.exe
           if errorlevel 1 exit /b 1
           arena_win_test.exe
@@ -39,3 +51,5 @@ jobs:
           if errorlevel 1 exit /b 1
           dbmem.exe --interval-ms 100 >NUL 2>&1
           if not errorlevel 1 exit /b 1
+          policy_win_test.exe
+          if errorlevel 1 exit /b 1
