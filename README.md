@@ -15,7 +15,9 @@ cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem.c /Fe:dbmem.exe /link psapi.lib
 cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_arena.c /Fe:arena_test.exe
 cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_vm_win.c /Fe:arena_win_test.exe
 cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem_policy.c /Fe:dbmem_policy.exe
+cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem_series.c /Fe:dbmem_series.exe /link psapi.lib
 cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_policy_contract.c /Fe:policy_contract_test.exe
+cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_series_args.c /Fe:series_args_test.exe
 cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_policy_win.c /Fe:policy_win_test.exe
 arena_test.exe
 arena_win_test.exe
@@ -50,6 +52,18 @@ R2 also contains opt-in apply and restore. both require explicit `--confirm`. ap
 run `scripts/verify-native-windows.ps1` from a Visual Studio x64 developer prompt to build and test all native binaries. the script writes SHA-256 hashes and test results into `build-msvc/NATIVE-VERIFY.txt`.
 
 `bench/bench_alloc_win.c` measures a fixed batch-lifetime workload against Windows Heap. it never modifies another process. different free semantics mean the measured ratio is not a general speed claim. see `docs/VERIFICATION-R3.md`.
+
+## R4 memory time series
+
+`dbmem_series.exe` records a bounded read-only series of Windows memory counters to stdout as CSV. the phase label is supplied by the operator and is not detected by Windows.
+
+```bat
+dbmem_series.exe --samples 10 --interval-ms 1000 --phase idle > idle.csv
+dbmem_series.exe --samples 10 --interval-ms 1000 --phase load > load.csv
+dbmem_series.exe --samples 10 --interval-ms 1000 --phase recovery > recovery.csv
+```
+
+samples are 1..120. interval is 100..10000 milliseconds. planned delay cannot exceed 300000 milliseconds. each row has a real elapsed clock and a UTC FILETIME timestamp. the program does not start the workload itself and cannot distinguish hard from soft page faults. see `docs/MEASURE-R4.md`.
 
 ## metrics
 

@@ -1,4 +1,5 @@
 build/
 build-msvc/
+build-r4/
 *.obj
 *.exe
