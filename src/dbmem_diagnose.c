@@ -66,12 +66,16 @@ static int counter(PDH_HCOUNTER h,double *out)
     *out=v.doubleValue;return 1;
 }
 static int processes(process_row *rows,unsigned int *number,
-                     unsigned int *denied,unsigned int *truncated)
+                     unsigned int *denied,unsigned int *truncated,
+                     unsigned int *open_access_denied,
+                     unsigned int *open_other_failed,
+                     unsigned int *query_failed)
 {
     HANDLE snapshot;
     PROCESSENTRY32W ent;
     BOOL more;
     *number=0;*denied=0;*truncated=0;
+    *open_access_denied=0;*open_other_failed=0;*query_failed=0;
     snapshot=CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS,0);
     if(snapshot==INVALID_HANDLE_VALUE) return 0;
     ZeroMemory(&ent,sizeof ent);
@@ -79,7 +83,7 @@ static int processes(process_row *rows,unsigned int *number,
     more=Process32FirstW(snapshot,&ent);
     if(!more){CloseHandle(snapshot);return 0;}
     do {
-        HANDLE h=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION|PROCESS_VM_READ,
+        HANDLE h=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,
                              FALSE,ent.th32ProcessID);
         if(h) {
             PROCESS_MEMORY_COUNTERS_EX mem;
@@ -94,9 +98,14 @@ static int processes(process_row *rows,unsigned int *number,
                     r->working_set_bytes=mem.WorkingSetSize;
                     wcsncpy_s(r->name,MAX_PATH,ent.szExeFile,_TRUNCATE);
                 } else *truncated=1;
-            } else (*denied)++;
+            } else {(*denied)++;(*query_failed)++;}
             CloseHandle(h);
-        } else (*denied)++;
+        } else {
+            DWORD error=GetLastError();
+            (*denied)++;
+            if(error==ERROR_ACCESS_DENIED) (*open_access_denied)++;
+            else (*open_other_failed)++;
+        }
         more=Process32NextW(snapshot,&ent);
     } while(more);
     CloseHandle(snapshot);
@@ -112,6 +121,7 @@ static void usage(void)
 int main(int argc,char **argv)
 {
     unsigned int seconds=1,top=12,seen=0,i,rows_n=0,denied=0,truncated=0;
+    unsigned int open_access_denied=0,open_other_failed=0,query_failed=0;
     PDH_HQUERY q=NULL;
     PDH_HCOUNTER reads=NULL,writes=NULL,standby=NULL;
     MEMORYSTATUSEX m;
@@ -163,7 +173,8 @@ int main(int argc,char **argv)
     }
     rows=(process_row*)HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,
                                   MAX_ROWS*sizeof *rows);
-    if(!rows || !processes(rows,&rows_n,&denied,&truncated)) {
+    if(!rows || !processes(rows,&rows_n,&denied,&truncated,
+                            &open_access_denied,&open_other_failed,&query_failed)) {
         fputs("process_snapshot_failed\n",stderr);goto done;
     }
     printf("sampling_seconds=%u\n",seconds);
@@ -179,6 +190,9 @@ int main(int argc,char **argv)
     printf("page_writes_per_sec=%.3f\n",write_rate);
     printf("processes_read=%u\n",rows_n);
     printf("processes_unreadable=%u\n",denied);
+    printf("processes_open_access_denied=%u\n",open_access_denied);
+    printf("processes_open_other_failed=%u\n",open_other_failed);
+    printf("processes_memory_query_failed=%u\n",query_failed);
     printf("processes_truncated=%u\n",truncated);
     puts("process_name,pid,private_commit_bytes,working_set_bytes");
     for(i=0;i<top && i<rows_n;i++) {
