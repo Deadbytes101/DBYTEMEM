@@ -6,6 +6,7 @@ build-r6/
 build-r7/
 build-r8/
 build-r9/
+build-r10/
 *.obj
 *.exe
 *.ps1

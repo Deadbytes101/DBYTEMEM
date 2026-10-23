@@ -14,6 +14,7 @@ $definitions = @(
     @('src\dbmem_pressure.c','dbmem_pressure','psapi.lib'),
     @('src\dbmem_pressure_watch.c','dbmem_pressure_watch','psapi.lib shell32.lib user32.lib'),
     @('src\dbmem_budget.c','dbmem_budget',''),
+    @('src\dbmem_diagnose.c','dbmem_diagnose','psapi.lib pdh.lib'),
     @('tests\test_budget_child.c','budget_child',''),
     @('tests\test_budget_quoting.c','budget_quoting_test',''),
     @('tests\test_arena.c','arena_test',''),
@@ -46,7 +47,7 @@ foreach ($n in @('arena_test','arena_win_test','policy_contract_test','policy_wi
     $lines.Add('test_' + $n + '=PASS')
     if ($n -eq 'bench_alloc_win') { foreach ($line in $output) { $lines.Add('bench_' + $line) } }
 }
-foreach ($n in @('dbmem_policy','dbmem','dbmem_disk','dbmem_watch','dbmem_pressure','dbmem_pressure_watch','dbmem_budget')) {
+foreach ($n in @('dbmem_policy','dbmem','dbmem_disk','dbmem_watch','dbmem_pressure','dbmem_pressure_watch','dbmem_budget','dbmem_diagnose')) {
     $exe = Join-Path $build ($n + '.exe')
     & $env:ComSpec /d /s /c ('"' + $exe + '" --help >NUL 2>&1')
     if ($LASTEXITCODE -ne 0) { throw ('help failed ' + $n) }
@@ -307,6 +308,62 @@ foreach($bad in @(
     }
 }
 $lines.Add('test_dbmem_budget=PASS')
+$diag=Join-Path $build 'dbmem_diagnose.exe'
+$diagOut=@(& $diag --seconds 1 --top 3)
+if($LASTEXITCODE -ne 0 -or $diagOut.Count -lt 14 -or
+   $diagOut -cnotcontains 'sampling_seconds=1' -or
+   $diagOut -cnotcontains 'process_name,pid,private_commit_bytes,working_set_bytes') {
+    throw 'R10 live diagnostic read failed'
+}
+$d=@{}
+foreach($ln in $diagOut) {
+    if($ln -match '^([a-z_]+)=(.+)$') {
+        if($d.ContainsKey($matches[1])) { throw 'R10 repeated key' }
+        $d[$matches[1]]=$matches[2]
+    }
+}
+foreach($name in @('physical_total_bytes','physical_available_bytes','commit_total_bytes',
+ 'commit_limit_bytes','commit_headroom_bytes','standby_normal_priority_bytes',
+ 'kernel_nonpaged_bytes','kernel_paged_bytes','processes_read',
+ 'processes_unreadable','processes_truncated')) {
+    [uint64]$n=0
+    if(-not [uint64]::TryParse($d[$name],[ref]$n)) { throw ('R10 invalid unsigned '+$name) }
+}
+foreach($name in @('page_reads_per_sec','page_writes_per_sec')) {
+    [double]$n=0.0
+    if(-not [double]::TryParse($d[$name],[Globalization.NumberStyles]::Float,
+         [Globalization.CultureInfo]::InvariantCulture,[ref]$n) -or
+       [double]::IsNaN($n) -or [double]::IsInfinity($n) -or $n -lt 0) {
+       throw ('R10 invalid PDH rate '+$name)
+    }
+}
+if([uint64]$d.physical_available_bytes -gt [uint64]$d.physical_total_bytes -or
+   [uint64]$d.commit_total_bytes -gt [uint64]$d.commit_limit_bytes -or
+   ([uint64]$d.commit_limit_bytes - [uint64]$d.commit_total_bytes) -ne
+   [uint64]$d.commit_headroom_bytes) {throw 'R10 system memory invariant failed'}
+$start=[Array]::IndexOf($diagOut,'process_name,pid,private_commit_bytes,working_set_bytes')
+$processes=@($diagOut|Select-Object -Skip ($start+1))
+if($start -lt 0 -or $processes.Count -gt 3) {throw 'R10 top boundedness failed'}
+[uint64]$prev=[uint64]::MaxValue
+foreach($p in $processes){
+ $col=$p.Split(',')
+ if($col.Count -ne 4) {throw 'R10 process row format failed'}
+ [uint64]$n=0
+ if(-not [uint64]::TryParse($col[2],[ref]$n) -or $n -gt $prev) {throw 'R10 process sort failed'}
+ $prev=$n
+}
+$zero=@(& $diag --seconds 1 --top 0)
+if($LASTEXITCODE -ne 0 -or
+ @($zero|Where-Object {$_ -match '^\w.+\.exe,\d+,'}).Count -ne 0 -or
+ $zero[-1] -cne 'process_name,pid,private_commit_bytes,working_set_bytes'){
+ throw 'R10 zero-top output failed'
+}
+foreach($bad in @('--seconds 0','--seconds 11','--seconds +1','--seconds 1 --seconds 2',
+                  '--top 21','--top -1','--top x','--unknown')) {
+    & $env:ComSpec /d /s /c ('"' + $diag + '" ' + $bad + ' >NUL 2>&1')
+    if($LASTEXITCODE -ne 1){throw ('R10 accepted bad options '+$bad)}
+}
+$lines.Add('test_dbmem_diagnose=PASS')
 foreach ($entry in $definitions) {
     $exe = Join-Path $build ($entry[1] + '.exe')
     $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash.ToLowerInvariant()
