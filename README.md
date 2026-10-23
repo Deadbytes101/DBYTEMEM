@@ -18,6 +18,8 @@ cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem_policy.c /Fe:dbmem_policy.exe
 cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem_series.c /Fe:dbmem_series.exe /link psapi.lib
 cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem_disk.c /Fe:dbmem_disk.exe
 cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem_watch.c /Fe:dbmem_watch.exe /link shell32.lib user32.lib
+cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem_pressure.c /Fe:dbmem_pressure.exe /link psapi.lib
+cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_pressure_policy.c /Fe:pressure_policy_test.exe
 cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_policy_contract.c /Fe:policy_contract_test.exe
 cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_series_args.c /Fe:series_args_test.exe
 cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_disk_policy.c /Fe:disk_policy_test.exe
@@ -82,6 +84,10 @@ by default warn below 15% available. report critical below 10% or below 5 GiB fr
 ## R6 native disk recovery watch
 
 `dbmem_watch.exe` checks fixed C: and D: drive letters, keeps a bounded local transition journal and attempts a tray warning only when a WARN or CRITICAL state begins. its output never authorizes cleanup. the Windows Task Scheduler setup is opt-in and uses the normal logged-on user without elevation. the verifier checks OK, WARN, repeat WARN, CRITICAL, recovery and invalid state on the native executable. see `docs/DISK-R6.md` for the setup and rollback commands.
+
+## R7 memory pressure inspection
+
+`dbmem_pressure.exe` classifies physical available memory and system-wide commit headroom using 3 Win32 snapshots. the median of the 3 severity ranks is returned as exit 0 OK, 3 WARN or 4 CRITICAL; invalid input is 1 and API failure is 2. this is read-only and not an automatic RAM cleaner. see `docs/PRESSURE-R7.md` for thresholds, unit semantics and limitations.
 
 ## metrics
 
