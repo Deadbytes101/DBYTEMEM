@@ -2,6 +2,7 @@ build/
 build-msvc/
 build-r4/
 build-r5/
+build-r6/
 *.obj
 *.exe
 *.ps1

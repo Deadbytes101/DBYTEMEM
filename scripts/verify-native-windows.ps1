@@ -10,6 +10,7 @@ $definitions = @(
     @('src\dbmem_policy.c','dbmem_policy',''),
     @('src\dbmem_series.c','dbmem_series','psapi.lib'),
     @('src\dbmem_disk.c','dbmem_disk',''),
+    @('src\dbmem_watch.c','dbmem_watch','shell32.lib user32.lib'),
     @('tests\test_arena.c','arena_test',''),
     @('tests\test_vm_win.c','arena_win_test',''),
     @('tests\test_policy_contract.c','policy_contract_test',''),
@@ -26,7 +27,7 @@ foreach ($entry in $definitions) {
     $exe = Join-Path $build ($entry[1] + '.exe')
     $obj = Join-Path $build ($entry[1] + '.obj')
     $arguments = @('/nologo','/std:c11','/W4','/WX','/O2','/TC', $src, '/Fe:' + $exe, '/Fo:' + $obj)
-    if ($entry[2]) { $arguments += @('/link', $entry[2]) }
+    if ($entry[2]) { $arguments += '/link'; $arguments += ($entry[2] -split ' ') }
     & cl @arguments
     if ($LASTEXITCODE -ne 0) { throw ('build failed ' + $entry[1]) }
     $lines.Add('build_' + $entry[1] + '=PASS')
@@ -39,7 +40,7 @@ foreach ($n in @('arena_test','arena_win_test','policy_contract_test','policy_wi
     $lines.Add('test_' + $n + '=PASS')
     if ($n -eq 'bench_alloc_win') { foreach ($line in $output) { $lines.Add('bench_' + $line) } }
 }
-foreach ($n in @('dbmem_policy','dbmem','dbmem_disk')) {
+foreach ($n in @('dbmem_policy','dbmem','dbmem_disk','dbmem_watch')) {
     $exe = Join-Path $build ($n + '.exe')
     & $env:ComSpec /d /s /c ('"' + $exe + '" --help >NUL 2>&1')
     if ($LASTEXITCODE -ne 0) { throw ('help failed ' + $n) }
@@ -85,6 +86,78 @@ foreach ($row in $diskRows[1..($diskRows.Count-1)]) {
 & $env:ComSpec /d /s /c ('"' + $diskPath + '" --warn-percent 0 >NUL 2>&1')
 if ($LASTEXITCODE -ne 1) { throw 'disk invalid options not rejected' }
 $lines.Add('test_dbmem_disk=PASS')
+$watch = Join-Path $build 'dbmem_watch.exe'
+$r6Dir = Join-Path $build ('r6-native-test-' + [guid]::NewGuid().ToString('N'))
+[IO.Directory]::CreateDirectory($r6Dir) | Out-Null
+$okArgs = @('--warn-percent','2','--critical-percent','1','--critical-free-gib','0')
+$warnArgs = @('--warn-percent','99','--critical-percent','1','--critical-free-gib','0')
+$criticalArgs = @('--warn-percent','99','--critical-percent','98','--critical-free-gib','0')
+function Test-R6-Sample([string[]]$options,[int]$expected,[string]$from,[string]$to) {
+    $rows = @(& $watch --no-notify --state-dir $r6Dir @options)
+    $exit = $LASTEXITCODE
+    if ($exit -ne $expected -or $rows.Count -ne 3 -or
+        $rows[0] -cne ('status=' + $to + ' previous=' + $from)) {
+        throw ('R6 transition failure ' + $from + ' to ' + $to + ' exit=' + $exit)
+    }
+}
+Test-R6-Sample $okArgs 0 'UNKNOWN' 'OK'
+Test-R6-Sample $warnArgs 3 'OK' 'WARN'
+Test-R6-Sample $warnArgs 3 'WARN' 'WARN'
+Test-R6-Sample $criticalArgs 4 'WARN' 'CRITICAL'
+Test-R6-Sample $okArgs 0 'CRITICAL' 'OK'
+$events = @(Get-Content -LiteralPath (Join-Path $r6Dir 'transitions.csv'))
+if ($events.Count -ne 4) { throw 'R6 duplicate or missing transition' }
+$expectedTransitions = @('UNKNOWN,OK','OK,WARN','WARN,CRITICAL','CRITICAL,OK')
+for ($i=0;$i -lt 4;$i++) {
+    $parts = $events[$i].Split(',')
+    if ($parts.Count -ne 5 -or ($parts[1] + ',' + $parts[2]) -cne $expectedTransitions[$i]) {
+        throw ('R6 transition journal malformed row=' + $i)
+    }
+    foreach ($column in @(0,3,4)) {
+        [uint64]$num = 0
+        if (-not [uint64]::TryParse($parts[$column],[ref]$num)) { throw 'R6 journal invalid number' }
+    }
+}
+$state = (Get-Content -LiteralPath (Join-Path $r6Dir 'state.txt') -Raw).Trim()
+if ($state -cne 'DBYTEMEM_R6_V1 OK') { throw 'R6 state mismatch' }
+$badDir = Join-Path $r6Dir 'corrupt'
+[IO.Directory]::CreateDirectory($badDir) | Out-Null
+$badState = Join-Path $badDir 'state.txt'
+[IO.File]::WriteAllText($badState,'corrupt',[Text.Encoding]::ASCII)
+$priorHash = (Get-FileHash -LiteralPath $badState -Algorithm SHA256).Hash
+& $env:ComSpec /d /s /c ('"' + $watch + '" --no-notify --state-dir "' + $badDir + '" --warn-percent 2 --critical-percent 1 --critical-free-gib 0 >NUL 2>&1')
+if ($LASTEXITCODE -ne 2 -or (Get-FileHash -LiteralPath $badState -Algorithm SHA256).Hash -ne $priorHash -or
+    (Test-Path -LiteralPath (Join-Path $badDir 'transitions.csv'))) {
+    throw 'R6 corrupt state not denied'
+}
+& $env:ComSpec /d /s /c ('"' + $watch + '" --no-notify --state-dir "' + $r6Dir + '" --warn-percent +15 >NUL 2>&1')
+if ($LASTEXITCODE -ne 1) { throw 'R6 malformed CLI accepted' }
+& $env:ComSpec /d /s /c ('"' + $watch + '" --no-notify --state-dir "' + $r6Dir + '" --warn-percent 20 --warn-percent 21 >NUL 2>&1')
+if ($LASTEXITCODE -ne 1) { throw 'R6 duplicate CLI accepted' }
+$capDir = Join-Path $build ('r6-cap-test-' + [guid]::NewGuid().ToString('N'))
+[IO.Directory]::CreateDirectory($capDir) | Out-Null
+for ($j = 0; $j -lt 106; ++$j) {
+    $opts = if (($j % 2) -eq 0) { $criticalArgs } else { $okArgs }
+    & $watch --no-notify --state-dir $capDir @opts | Out-Null
+    $expectedCode = if (($j % 2) -eq 0) { 4 } else { 0 }
+    if ($LASTEXITCODE -ne $expectedCode) { throw ('R6 ring test failed iteration=' + $j) }
+}
+if (@(Get-Content -LiteralPath (Join-Path $capDir 'transitions.csv')).Count -ne 100) {
+    throw 'R6 journal ring exceeded 100'
+}
+$badJournal = Join-Path $r6Dir 'corrupt-journal'
+[IO.Directory]::CreateDirectory($badJournal) | Out-Null
+& $watch --no-notify --state-dir $badJournal @okArgs | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'R6 journal fault baseline failed' }
+$badJournalState = Join-Path $badJournal 'state.txt'
+$badJournalHash = (Get-FileHash -LiteralPath $badJournalState -Algorithm SHA256).Hash
+[IO.File]::WriteAllText((Join-Path $badJournal 'transitions.csv'),'truncated',[Text.Encoding]::ASCII)
+& $env:ComSpec /d /s /c ('"' + $watch + '" --no-notify --state-dir "' + $badJournal + '" --warn-percent 99 --critical-percent 1 --critical-free-gib 0 >NUL 2>&1')
+if ($LASTEXITCODE -ne 2 -or
+    (Get-FileHash -LiteralPath $badJournalState -Algorithm SHA256).Hash -ne $badJournalHash) {
+    throw 'R6 malformed journal not denied'
+}
+$lines.Add('test_dbmem_watch=PASS')
 foreach ($entry in $definitions) {
     $exe = Join-Path $build ($entry[1] + '.exe')
     $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash.ToLowerInvariant()

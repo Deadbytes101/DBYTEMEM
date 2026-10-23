@@ -17,6 +17,7 @@ cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_vm_win.c /Fe:arena_win_test.exe
 cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem_policy.c /Fe:dbmem_policy.exe
 cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem_series.c /Fe:dbmem_series.exe /link psapi.lib
 cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem_disk.c /Fe:dbmem_disk.exe
+cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem_watch.c /Fe:dbmem_watch.exe /link shell32.lib user32.lib
 cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_policy_contract.c /Fe:policy_contract_test.exe
 cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_series_args.c /Fe:series_args_test.exe
 cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_disk_policy.c /Fe:disk_policy_test.exe
@@ -77,6 +78,10 @@ dbmem_disk.exe --csv
 ```
 
 by default warn below 15% available. report critical below 10% or below 5 GiB free. limits are operator-settable and use strict comparison. exit 0 means OK, 3 means WARN, 4 means CRITICAL, 1 means invalid options and 2 means read error. these codes are useful for an external scheduler but this tool installs no schedule or service. see `docs/DISK-R5.md` for API and metric semantics.
+
+## R6 native disk recovery watch
+
+`dbmem_watch.exe` checks fixed C: and D: drive letters, keeps a bounded local transition journal and attempts a tray warning only when a WARN or CRITICAL state begins. its output never authorizes cleanup. the Windows Task Scheduler setup is opt-in and uses the normal logged-on user without elevation. the verifier checks OK, WARN, repeat WARN, CRITICAL, recovery and invalid state on the native executable. see `docs/DISK-R6.md` for the setup and rollback commands.
 
 ## metrics
 
