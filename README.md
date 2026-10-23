@@ -45,6 +45,12 @@ dbmem_policy.exe plan --pid 1234 --to 2
 
 R2 also contains opt-in apply and restore. both require explicit `--confirm`. apply pins PID plus creation FILETIME and existing priority from a fresh plan. it flushes a unique recovery journal before calling `SetProcessInformation`. restore refuses PID reuse and unexpected third-party changes. the journal remains on disk for inspection even after restore. see `docs/POLICY-R2.md` for exact commands and limits.
 
+## native verification and R3 benchmark
+
+run `scripts/verify-native-windows.ps1` from a Visual Studio x64 developer prompt to build and test all native binaries. the script writes SHA-256 hashes and test results into `build-msvc/NATIVE-VERIFY.txt`.
+
+`bench/bench_alloc_win.c` measures a fixed batch-lifetime workload against Windows Heap. it never modifies another process. different free semantics mean the measured ratio is not a general speed claim. see `docs/VERIFICATION-R3.md`.
+
 ## metrics
 
 - physical available includes memory Windows can reclaim; used RAM is not a synonym for performance loss
