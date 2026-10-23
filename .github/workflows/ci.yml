@@ -88,3 +88,5 @@ jobs:
           if errorlevel 1 exit /b 1
           bench_alloc_win.exe
           if errorlevel 1 exit /b 1
+          powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\verify-native-windows.ps1
+          if errorlevel 1 exit /b 1
