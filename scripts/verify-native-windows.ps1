@@ -85,6 +85,10 @@ foreach ($row in $diskRows[1..($diskRows.Count-1)]) {
 & $env:ComSpec /d /s /c ('"' + $diskPath + '" --warn-percent 0 >NUL 2>&1')
 if ($LASTEXITCODE -ne 1) { throw 'disk invalid options not rejected' }
 $lines.Add('test_dbmem_disk=PASS')
+$watchTest = Join-Path $root 'tests\test_disk_watch_r6.ps1'
+& powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $watchTest -ProbePath $diskPath -OutputRoot $build
+if ($LASTEXITCODE -ne 0) { throw 'disk recovery watch r6 test failed' }
+$lines.Add('test_disk_watch_r6=PASS')
 foreach ($entry in $definitions) {
     $exe = Join-Path $build ($entry[1] + '.exe')
     $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash.ToLowerInvariant()

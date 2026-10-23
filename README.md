@@ -78,6 +78,12 @@ dbmem_disk.exe --csv
 
 by default warn below 15% available. report critical below 10% or below 5 GiB free. limits are operator-settable and use strict comparison. exit 0 means OK, 3 means WARN, 4 means CRITICAL, 1 means invalid options and 2 means read error. these codes are useful for an external scheduler but this tool installs no schedule or service. see `docs/DISK-R5.md` for API and metric semantics.
 
+## R6 scheduled disk watch
+
+`disk-watch-r6.ps1` records one C:/D: disk check and bounded status transitions. no cleanup.
+
+`disk-watch-task-r6.ps1` registers a 30-minute task only when explicitly called with `-Action Install`. the task runs as the logged-on user without elevation. `-Action Uninstall` revokes it and preserves logs. a tray warning is best effort and depends on desktop notification settings. see `docs/DISK-R6.md` for exact commands, failure behavior and tests.
+
 ## metrics
 
 - physical available includes memory Windows can reclaim; used RAM is not a synonym for performance loss

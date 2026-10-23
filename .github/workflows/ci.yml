@@ -64,6 +64,8 @@ jobs:
           if errorlevel 1 exit /b 1
           disk_policy_test.exe
           if errorlevel 1 exit /b 1
+          powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests\test_disk_watch_r6.ps1 -ProbePath "%CD%\dbmem_disk.exe" -OutputRoot "%TEMP%"
+          if errorlevel 1 exit /b 1
           dbmem_disk.exe --help
           if errorlevel 1 exit /b 1
           dbmem_disk.exe --drive C --csv
