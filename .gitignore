@@ -4,3 +4,4 @@ build-r4/
 build-r5/
 *.obj
 *.exe
+*.ps1
