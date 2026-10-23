@@ -44,6 +44,7 @@ int wmain(void)
     wchar_t exe[MAX_PATH], directory[MAX_PATH], journal[MAX_PATH] = {0}, args[1200];
     wchar_t *slash;
     DWORD n, original, now, target;
+    MEMORY_PRIORITY_INFORMATION alternate;
     ULONGLONG creation, post;
     HANDLE f;
     unsigned char byte;
@@ -74,8 +75,25 @@ int wmain(void)
                  (unsigned long long)creation,(unsigned long)original,journal) < 0 ||
         !run(exe,args,1)) goto done;
     if (!current(&now,&post) || now != target || post != creation) goto done;
-    if (swprintf(args,1200,L"restore --journal \"%ls\" --confirm",journal)<0 ||
-        !run(exe,args,1)) goto done;
+    /* an existing journal must not be overwritten by a second apply */
+    if (swprintf(args,1200,L"apply --pid %lu --to %lu --expect-created %llu --expect-priority %lu --journal \"%ls\" --confirm",
+                 (unsigned long)GetCurrentProcessId(),(unsigned long)original,
+                 (unsigned long long)creation,(unsigned long)target,journal) < 0 ||
+        !run(exe,args,0)) goto done;
+    if (!current(&now,&post) || now != target) goto done;
+    /* simulate a third-party change on this test process */
+    alternate.MemoryPriority = 3;
+    if (target == 3 || original == 3) alternate.MemoryPriority = 2;
+    if (!SetProcessInformation(GetCurrentProcess(), ProcessMemoryPriority,
+                               &alternate, (DWORD)sizeof(alternate))) goto done;
+    if (!current(&now,&post) || now != alternate.MemoryPriority) goto done;
+    if (swprintf(args,1200,L"restore --journal \"%ls\" --confirm",journal) < 0 ||
+        !run(exe,args,0)) goto done;
+    if (!current(&now,&post) || now != alternate.MemoryPriority) goto done;
+    alternate.MemoryPriority = target;
+    if (!SetProcessInformation(GetCurrentProcess(), ProcessMemoryPriority,
+                               &alternate, (DWORD)sizeof(alternate))) goto done;
+    if (!run(exe,args,1)) goto done;
     if (!current(&now,&post) || now != original || post != creation) goto done;
     if (!run(exe,args,1)) goto done; /* already restored must be idempotent */
     f = CreateFileW(journal,GENERIC_WRITE,0,NULL,OPEN_EXISTING,0,NULL);
