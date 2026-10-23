@@ -98,6 +98,10 @@ by default warn below 15% available. report critical below 10% or below 5 GiB fr
 
 `dbmem_budget.exe` can launch a specified program under an explicit Windows Job Object commit budget. `plan` does nothing; `run --confirm` starts a new child in a suspended state and attaches it to the job before resuming execution. no registry, pagefile, kernel or pre-existing process modification. the child tree ends when the launcher exits. see `docs/BUDGET-R9.md` and use only on programs that can tolerate an allocation failure.
 
+## R10 read-only memory diagnosis
+
+`dbmem_diagnose.exe` reads physical available memory, system commit headroom, standby cache, hard page-read/write operations per second and the top process private commit consumers. the PDH rate counters require two samples at least one second apart. each PID entry is a best-effort snapshot and inaccessible processes are counted separately. no service, scheduled watch, pagefile change, WSL shutdown, memory trim or automatic tuning is installed. see `docs/DIAGNOSE-R10.md`.
+
 ## metrics
 
 - physical available includes memory Windows can reclaim; used RAM is not a synonym for performance loss
