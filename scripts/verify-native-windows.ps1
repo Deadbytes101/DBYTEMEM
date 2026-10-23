@@ -9,10 +9,12 @@ $definitions = @(
     @('src\dbmem.c','dbmem','psapi.lib'),
     @('src\dbmem_policy.c','dbmem_policy',''),
     @('src\dbmem_series.c','dbmem_series','psapi.lib'),
+    @('src\dbmem_disk.c','dbmem_disk',''),
     @('tests\test_arena.c','arena_test',''),
     @('tests\test_vm_win.c','arena_win_test',''),
     @('tests\test_policy_contract.c','policy_contract_test',''),
     @('tests\test_series_args.c','series_args_test',''),
+    @('tests\test_disk_policy.c','disk_policy_test',''),
     @('tests\test_policy_win.c','policy_win_test',''),
     @('bench\bench_alloc_win.c','bench_alloc_win','')
 )
@@ -29,7 +31,7 @@ foreach ($entry in $definitions) {
     if ($LASTEXITCODE -ne 0) { throw ('build failed ' + $entry[1]) }
     $lines.Add('build_' + $entry[1] + '=PASS')
 }
-foreach ($n in @('arena_test','arena_win_test','policy_contract_test','policy_win_test','series_args_test','dbmem','bench_alloc_win')) {
+foreach ($n in @('arena_test','arena_win_test','policy_contract_test','policy_win_test','series_args_test','disk_policy_test','dbmem','bench_alloc_win')) {
     $exe = Join-Path $build ($n + '.exe')
     $output = & $env:ComSpec /d /s /c ('"' + $exe + '" 2>&1')
     $code = $LASTEXITCODE
@@ -37,7 +39,7 @@ foreach ($n in @('arena_test','arena_win_test','policy_contract_test','policy_wi
     $lines.Add('test_' + $n + '=PASS')
     if ($n -eq 'bench_alloc_win') { foreach ($line in $output) { $lines.Add('bench_' + $line) } }
 }
-foreach ($n in @('dbmem_policy','dbmem')) {
+foreach ($n in @('dbmem_policy','dbmem','dbmem_disk')) {
     $exe = Join-Path $build ($n + '.exe')
     & $env:ComSpec /d /s /c ('"' + $exe + '" --help >NUL 2>&1')
     if ($LASTEXITCODE -ne 0) { throw ('help failed ' + $n) }
@@ -64,6 +66,25 @@ for ($idx = 1; $idx -le 3; ++$idx) {
 & $env:ComSpec /d /s /c ('"' + $seriesPath + '" --samples 0 >NUL 2>&1')
 if ($LASTEXITCODE -eq 0) { throw 'series invalid argument accepted' }
 $lines.Add('test_dbmem_series=PASS')
+$diskPath = Join-Path $build 'dbmem_disk.exe'
+$diskRows = @(& $diskPath --csv)
+if ($LASTEXITCODE -notin @(0,3,4) -or $diskRows.Count -lt 2) { throw 'disk scan failed' }
+if ($diskRows[0] -cne 'drive,status,total_bytes_for_caller,free_bytes_for_caller,volume_free_bytes,free_percent') { throw 'disk csv header failed' }
+foreach ($row in $diskRows[1..($diskRows.Count-1)]) {
+    $cols = $row.Split(',')
+    if ($cols.Count -ne 6 -or $cols[0] -cnotmatch '^[A-Z]:$' -or $cols[1] -cnotin @('OK','WARN','CRITICAL')) { throw 'disk csv schema failed' }
+    $metrics = @()
+    foreach ($column in 2..4) {
+        [uint64]$num = 0
+        if (-not [uint64]::TryParse($cols[$column],[ref]$num)) { throw 'disk csv integer failed' }
+        $metrics += $num
+    }
+    if ($metrics[0] -eq 0 -or $metrics[1] -gt $metrics[0] -or $metrics[1] -gt $metrics[2]) { throw 'disk capacity invariant failed' }
+    if ($cols[5] -cnotmatch '^\d+\.\d{2}$') { throw 'disk percent format failed' }
+}
+& $env:ComSpec /d /s /c ('"' + $diskPath + '" --warn-percent 0 >NUL 2>&1')
+if ($LASTEXITCODE -ne 1) { throw 'disk invalid options not rejected' }
+$lines.Add('test_dbmem_disk=PASS')
 foreach ($entry in $definitions) {
     $exe = Join-Path $build ($entry[1] + '.exe')
     $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash.ToLowerInvariant()
