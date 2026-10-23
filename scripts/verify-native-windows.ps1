@@ -13,6 +13,9 @@ $definitions = @(
     @('src\dbmem_watch.c','dbmem_watch','shell32.lib user32.lib'),
     @('src\dbmem_pressure.c','dbmem_pressure','psapi.lib'),
     @('src\dbmem_pressure_watch.c','dbmem_pressure_watch','psapi.lib shell32.lib user32.lib'),
+    @('src\dbmem_budget.c','dbmem_budget',''),
+    @('tests\test_budget_child.c','budget_child',''),
+    @('tests\test_budget_quoting.c','budget_quoting_test',''),
     @('tests\test_arena.c','arena_test',''),
     @('tests\test_vm_win.c','arena_win_test',''),
     @('tests\test_policy_contract.c','policy_contract_test',''),
@@ -43,7 +46,7 @@ foreach ($n in @('arena_test','arena_win_test','policy_contract_test','policy_wi
     $lines.Add('test_' + $n + '=PASS')
     if ($n -eq 'bench_alloc_win') { foreach ($line in $output) { $lines.Add('bench_' + $line) } }
 }
-foreach ($n in @('dbmem_policy','dbmem','dbmem_disk','dbmem_watch','dbmem_pressure','dbmem_pressure_watch')) {
+foreach ($n in @('dbmem_policy','dbmem','dbmem_disk','dbmem_watch','dbmem_pressure','dbmem_pressure_watch','dbmem_budget')) {
     $exe = Join-Path $build ($n + '.exe')
     & $env:ComSpec /d /s /c ('"' + $exe + '" --help >NUL 2>&1')
     if ($LASTEXITCODE -ne 0) { throw ('help failed ' + $n) }
@@ -268,6 +271,42 @@ if(@($r8Lines|Where-Object {$_ -like 'EVENT *'}).Count -ne 100 -or
     throw 'R8 bounded journal ring failure'
 }
 $lines.Add('test_dbmem_pressure_watch=PASS')
+$budget=Join-Path $build 'dbmem_budget.exe'
+$budgetChild=Join-Path $build 'budget_child.exe'
+$budgetQuote=Join-Path $build 'budget_quoting_test.exe'
+$plan=@(& $budget plan --limit-mib 256 --exe $budgetChild -- --alloc-mib 80)
+if($LASTEXITCODE -ne 0 -or $plan -cnotcontains 'mutation=none' -or
+   $plan -cnotcontains 'job_commit_limit_bytes=268435456') {
+    throw 'R9 dry-run contract failed'
+}
+$allowed=@(& $budget run --limit-mib 256 --exe $budgetChild --confirm -- --alloc-mib 80)
+if($LASTEXITCODE -ne 0 -or $allowed -cnotcontains 'child_exit_code=0' -or
+   $allowed -cnotcontains 'allocation_succeeded_bytes=83886080' -or
+   $allowed -cnotcontains 'job_closed=1') {
+    throw 'R9 allowed allocation contract failed'
+}
+$denied=@(& $budget run --limit-mib 64 --exe $budgetChild --confirm -- --alloc-mib 80)
+if($LASTEXITCODE -ne 3 -or $denied -cnotcontains 'child_exit_code=73' -or
+   $denied -cnotcontains 'allocation_denied=1') {
+    throw 'R9 limit enforcement contract failed'
+}
+$quoted=@(& $budgetQuote $budgetChild)
+if($LASTEXITCODE -ne 0 -or $quoted -cnotcontains 'argument_quoting=PASS' -or
+   $quoted -cnotcontains 'child_exit_code=0') {
+    throw 'R9 Windows native quoting contract failed'
+}
+foreach($bad in @(
+ 'run --limit-mib 256 --exe "'+$budgetChild+'" -- --alloc-mib 80',
+ 'plan --limit-mib 12 --exe "'+$budgetChild+'"',
+ 'plan --limit-mib 256 --limit-mib 512 --exe "'+$budgetChild+'"',
+ 'plan --limit-mib 256 --exe "Z:\missing\no.exe"'
+)) {
+    & $env:ComSpec /d /s /c ('"' + $budget + '" ' + $bad + ' >NUL 2>&1')
+    if($LASTEXITCODE -ne 1) {
+        throw ('R9 negative CLI accepted '+$bad)
+    }
+}
+$lines.Add('test_dbmem_budget=PASS')
 foreach ($entry in $definitions) {
     $exe = Join-Path $build ($entry[1] + '.exe')
     $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash.ToLowerInvariant()

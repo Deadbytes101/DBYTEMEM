@@ -94,6 +94,10 @@ by default warn below 15% available. report critical below 10% or below 5 GiB fr
 
 `dbmem_pressure_watch.exe` samples R7 memory pressure and records the current status and 100 recent transitions in one atomic local file. it attempts a Windows tray balloon on new WARN or CRITICAL states and never purges RAM. see `docs/PRESSURE-WATCH-R8.md` for usage, native tests, consent boundary and optional Scheduled Task rollback.
 
+## R9 native memory budget
+
+`dbmem_budget.exe` can launch a specified program under an explicit Windows Job Object commit budget. `plan` does nothing; `run --confirm` starts a new child in a suspended state and attaches it to the job before resuming execution. no registry, pagefile, kernel or pre-existing process modification. the child tree ends when the launcher exits. see `docs/BUDGET-R9.md` and use only on programs that can tolerate an allocation failure.
+
 ## metrics
 
 - physical available includes memory Windows can reclaim; used RAM is not a synonym for performance loss
