@@ -1,0 +1,41 @@
+name: native-ci
+on:
+  push:
+  pull_request:
+jobs:
+  linux-portable:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: GCC warnings and tests
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -pedantic -O2 tests/test_arena.c -o arena_test
+          ./arena_test
+      - name: Clang sanitizers and tests
+        run: |
+          clang -std=c11 -Wall -Wextra -Werror -pedantic -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_arena.c -o arena_san
+          ./arena_san
+  windows-native:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: MSVC x64 build and tests
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem.c /Fe:dbmem.exe /link psapi.lib
+          if errorlevel 1 exit /b 1
+          cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_arena.c /Fe:arena_test.exe
+          if errorlevel 1 exit /b 1
+          cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_vm_win.c /Fe:arena_win_test.exe
+          if errorlevel 1 exit /b 1
+          arena_test.exe
+          if errorlevel 1 exit /b 1
+          arena_win_test.exe
+          if errorlevel 1 exit /b 1
+          dbmem.exe --help
+          if errorlevel 1 exit /b 1
+          dbmem.exe
+          if errorlevel 1 exit /b 1
+          dbmem.exe --interval-ms 100 >NUL 2>&1
+          if not errorlevel 1 exit /b 1
