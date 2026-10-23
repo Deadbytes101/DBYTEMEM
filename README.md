@@ -102,6 +102,10 @@ by default warn below 15% available. report critical below 10% or below 5 GiB fr
 
 `dbmem_diagnose.exe` reads physical available memory, system commit headroom, standby cache, hard page-read/write operations per second and the top process private commit consumers. the PDH rate counters require two samples at least one second apart. each PID entry is a best-effort snapshot and inaccessible processes are counted separately. no service, scheduled watch, pagefile change, WSL shutdown, memory trim or automatic tuning is installed. see `docs/DIAGNOSE-R10.md`.
 
+## R11 minimum-rights process inspection
+
+R11 requests only `PROCESS_QUERY_LIMITED_INFORMATION` for process memory stats on Windows 11. `PROCESS_VM_READ` is not required for `GetProcessMemoryInfo` on supported Windows versions and can unnecessarily exclude protected processes. the CLI now reports access-denied, other-open failures and memory-query failures separately. it never bypasses Windows process protection or elevates privileges. see `docs/DIAGNOSE-R11.md`.
+
 ## metrics
 
 - physical available includes memory Windows can reclaim; used RAM is not a synonym for performance loss

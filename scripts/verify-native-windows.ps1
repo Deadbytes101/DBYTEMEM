@@ -15,6 +15,7 @@ $definitions = @(
     @('src\dbmem_pressure_watch.c','dbmem_pressure_watch','psapi.lib shell32.lib user32.lib'),
     @('src\dbmem_budget.c','dbmem_budget',''),
     @('src\dbmem_diagnose.c','dbmem_diagnose','psapi.lib pdh.lib'),
+    @('tests\test_diagnose_process_access.c','diagnose_access_test','psapi.lib'),
     @('tests\test_budget_child.c','budget_child',''),
     @('tests\test_budget_quoting.c','budget_quoting_test',''),
     @('tests\test_arena.c','arena_test',''),
@@ -39,7 +40,7 @@ foreach ($entry in $definitions) {
     if ($LASTEXITCODE -ne 0) { throw ('build failed ' + $entry[1]) }
     $lines.Add('build_' + $entry[1] + '=PASS')
 }
-foreach ($n in @('arena_test','arena_win_test','policy_contract_test','policy_win_test','series_args_test','disk_policy_test','pressure_policy_test','dbmem','bench_alloc_win')) {
+foreach ($n in @('arena_test','arena_win_test','policy_contract_test','policy_win_test','series_args_test','disk_policy_test','pressure_policy_test','diagnose_access_test','dbmem','bench_alloc_win')) {
     $exe = Join-Path $build ($n + '.exe')
     $output = & $env:ComSpec /d /s /c ('"' + $exe + '" 2>&1')
     $code = $LASTEXITCODE
@@ -325,7 +326,8 @@ foreach($ln in $diagOut) {
 foreach($name in @('physical_total_bytes','physical_available_bytes','commit_total_bytes',
  'commit_limit_bytes','commit_headroom_bytes','standby_normal_priority_bytes',
  'kernel_nonpaged_bytes','kernel_paged_bytes','processes_read',
- 'processes_unreadable','processes_truncated')) {
+ 'processes_unreadable','processes_open_access_denied','processes_open_other_failed',
+ 'processes_memory_query_failed','processes_truncated')) {
     [uint64]$n=0
     if(-not [uint64]::TryParse($d[$name],[ref]$n)) { throw ('R10 invalid unsigned '+$name) }
 }
@@ -336,6 +338,10 @@ foreach($name in @('page_reads_per_sec','page_writes_per_sec')) {
        [double]::IsNaN($n) -or [double]::IsInfinity($n) -or $n -lt 0) {
        throw ('R10 invalid PDH rate '+$name)
     }
+}
+if(([uint64]$d.processes_open_access_denied + [uint64]$d.processes_open_other_failed +
+    [uint64]$d.processes_memory_query_failed) -ne [uint64]$d.processes_unreadable) {
+    throw 'R11 unreadable breakdown does not add up'
 }
 if([uint64]$d.physical_available_bytes -gt [uint64]$d.physical_total_bytes -or
    [uint64]$d.commit_total_bytes -gt [uint64]$d.commit_limit_bytes -or
