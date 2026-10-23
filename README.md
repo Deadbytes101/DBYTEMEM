@@ -16,8 +16,10 @@ cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_arena.c /Fe:arena_test.exe
 cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_vm_win.c /Fe:arena_win_test.exe
 cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem_policy.c /Fe:dbmem_policy.exe
 cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem_series.c /Fe:dbmem_series.exe /link psapi.lib
+cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem_disk.c /Fe:dbmem_disk.exe
 cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_policy_contract.c /Fe:policy_contract_test.exe
 cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_series_args.c /Fe:series_args_test.exe
+cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_disk_policy.c /Fe:disk_policy_test.exe
 cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_policy_win.c /Fe:policy_win_test.exe
 arena_test.exe
 arena_win_test.exe
@@ -64,6 +66,17 @@ dbmem_series.exe --samples 10 --interval-ms 1000 --phase recovery > recovery.csv
 ```
 
 samples are 1..120. interval is 100..10000 milliseconds. planned delay cannot exceed 300000 milliseconds. each row has a real elapsed clock and a UTC FILETIME timestamp. the program does not start the workload itself and cannot distinguish hard from soft page faults. see `docs/MEASURE-R4.md`.
+
+## R5 disk watch
+
+`dbmem_disk.exe` reads free capacity for fixed drive letters. it does not delete files or change disk settings.
+
+```bat
+dbmem_disk.exe --drive C --drive D
+dbmem_disk.exe --csv
+```
+
+by default warn below 15% available. report critical below 10% or below 5 GiB free. limits are operator-settable and use strict comparison. exit 0 means OK, 3 means WARN, 4 means CRITICAL, 1 means invalid options and 2 means read error. these codes are useful for an external scheduler but this tool installs no schedule or service. see `docs/DISK-R5.md` for API and metric semantics.
 
 ## metrics
 

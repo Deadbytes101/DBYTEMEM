@@ -16,6 +16,8 @@ jobs:
           ./policy_contract_test
           gcc -std=c11 -Wall -Wextra -Werror -pedantic -O2 tests/test_series_args.c -o series_args_test
           ./series_args_test
+          gcc -std=c11 -Wall -Wextra -Werror -pedantic -O2 tests/test_disk_policy.c -o disk_policy_test
+          ./disk_policy_test
       - name: Clang sanitizers and tests
         run: |
           clang -std=c11 -Wall -Wextra -Werror -pedantic -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_arena.c -o arena_san
@@ -24,6 +26,8 @@ jobs:
           ./policy_contract_san
           clang -std=c11 -Wall -Wextra -Werror -pedantic -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_series_args.c -o series_args_san
           ./series_args_san
+          clang -std=c11 -Wall -Wextra -Werror -pedantic -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_disk_policy.c -o disk_policy_san
+          ./disk_policy_san
   windows-native:
     runs-on: windows-2022
     steps:
@@ -42,9 +46,13 @@ jobs:
           if errorlevel 1 exit /b 1
           cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem_series.c /Fe:dbmem_series.exe /link psapi.lib
           if errorlevel 1 exit /b 1
+          cl /nologo /std:c11 /W4 /WX /O2 /TC src\dbmem_disk.c /Fe:dbmem_disk.exe
+          if errorlevel 1 exit /b 1
           cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_policy_contract.c /Fe:policy_contract_test.exe
           if errorlevel 1 exit /b 1
           cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_series_args.c /Fe:series_args_test.exe
+          if errorlevel 1 exit /b 1
+          cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_disk_policy.c /Fe:disk_policy_test.exe
           if errorlevel 1 exit /b 1
           cl /nologo /std:c11 /W4 /WX /O2 /TC tests\test_policy_win.c /Fe:policy_win_test.exe
           if errorlevel 1 exit /b 1
@@ -54,6 +62,16 @@ jobs:
           if errorlevel 1 exit /b 1
           series_args_test.exe
           if errorlevel 1 exit /b 1
+          disk_policy_test.exe
+          if errorlevel 1 exit /b 1
+          dbmem_disk.exe --help
+          if errorlevel 1 exit /b 1
+          dbmem_disk.exe --drive C --csv
+          if errorlevel 5 exit /b 1
+          if errorlevel 1 if not errorlevel 3 exit /b 1
+          dbmem_disk.exe --warn-percent 0 >NUL 2>&1
+          if not errorlevel 1 exit /b 1
+          if errorlevel 2 exit /b 1
           dbmem_series.exe --samples 3 --interval-ms 100 --phase unclassified
           if errorlevel 1 exit /b 1
           arena_test.exe
