@@ -33,3 +33,19 @@ API references:
 - https://learn.microsoft.com/en-us/windows/win32/memory/freeing-virtual-memory
 - https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-getperformanceinfo
 - https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-getprocessmemoryinfo
+
+## R2 process policy
+
+implements documented GetProcessInformation / SetProcessInformation with ProcessMemoryPriority. new source: src/dbmem_policy.c and src/policy_contract.h. tests: tests/test_policy_contract.c and tests/test_policy_win.c. no kernel access.
+
+- inspect and plan do not change any process
+- apply requires PID, process creation FILETIME, observed old priority, requested new priority, a unique local journal path, and --confirm
+- journal uses a 40-byte fixed native little-endian layout with an FNV-1a accidental-corruption check. this is not a cryptographic signature or a security boundary
+- journal must be created and flushed before SetProcessInformation. CREATE_NEW refuses overwrite. file handle stays exclusive until postcheck completes
+- restore verifies both PID and process creation FILETIME, and refuses an intervening priority other than recorded old/new
+- journal is retained after restore for evidence. repeated restore of an already-restored running process is idempotent
+- process termination cannot be undone; Windows API does not provide atomic compare-and-swap for another process's memory priority. a concurrent external writer can race the verification window
+- negative tests: stale process creation, invalid parameters, journal corruption, pid-reuse model and intervening changes
+- Windows native CI tests an actual policy apply/restore on a temporary test process, not on production processes
+
+not proven until fresh CI or native Windows test execution: driver compatibility, policy persistence across thread activity, privileged processes, and physical performance improvements.
