@@ -18,6 +18,8 @@ jobs:
           ./series_args_test
           gcc -std=c11 -Wall -Wextra -Werror -pedantic -O2 tests/test_disk_policy.c -o disk_policy_test
           ./disk_policy_test
+          gcc -std=c11 -Wall -Wextra -Werror -pedantic -O2 tests/test_pressure_policy.c -o pressure_policy_test
+          ./pressure_policy_test
       - name: Clang sanitizers and tests
         run: |
           clang -std=c11 -Wall -Wextra -Werror -pedantic -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_arena.c -o arena_san
@@ -28,6 +30,8 @@ jobs:
           ./series_args_san
           clang -std=c11 -Wall -Wextra -Werror -pedantic -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_disk_policy.c -o disk_policy_san
           ./disk_policy_san
+          clang -std=c11 -Wall -Wextra -Werror -pedantic -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer tests/test_pressure_policy.c -o pressure_policy_san
+          ./pressure_policy_san
   windows-native:
     runs-on: windows-2022
     steps:

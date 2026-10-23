@@ -11,11 +11,13 @@ $definitions = @(
     @('src\dbmem_series.c','dbmem_series','psapi.lib'),
     @('src\dbmem_disk.c','dbmem_disk',''),
     @('src\dbmem_watch.c','dbmem_watch','shell32.lib user32.lib'),
+    @('src\dbmem_pressure.c','dbmem_pressure','psapi.lib'),
     @('tests\test_arena.c','arena_test',''),
     @('tests\test_vm_win.c','arena_win_test',''),
     @('tests\test_policy_contract.c','policy_contract_test',''),
     @('tests\test_series_args.c','series_args_test',''),
     @('tests\test_disk_policy.c','disk_policy_test',''),
+    @('tests\test_pressure_policy.c','pressure_policy_test',''),
     @('tests\test_policy_win.c','policy_win_test',''),
     @('bench\bench_alloc_win.c','bench_alloc_win','')
 )
@@ -32,7 +34,7 @@ foreach ($entry in $definitions) {
     if ($LASTEXITCODE -ne 0) { throw ('build failed ' + $entry[1]) }
     $lines.Add('build_' + $entry[1] + '=PASS')
 }
-foreach ($n in @('arena_test','arena_win_test','policy_contract_test','policy_win_test','series_args_test','disk_policy_test','dbmem','bench_alloc_win')) {
+foreach ($n in @('arena_test','arena_win_test','policy_contract_test','policy_win_test','series_args_test','disk_policy_test','pressure_policy_test','dbmem','bench_alloc_win')) {
     $exe = Join-Path $build ($n + '.exe')
     $output = & $env:ComSpec /d /s /c ('"' + $exe + '" 2>&1')
     $code = $LASTEXITCODE
@@ -40,7 +42,7 @@ foreach ($n in @('arena_test','arena_win_test','policy_contract_test','policy_wi
     $lines.Add('test_' + $n + '=PASS')
     if ($n -eq 'bench_alloc_win') { foreach ($line in $output) { $lines.Add('bench_' + $line) } }
 }
-foreach ($n in @('dbmem_policy','dbmem','dbmem_disk','dbmem_watch')) {
+foreach ($n in @('dbmem_policy','dbmem','dbmem_disk','dbmem_watch','dbmem_pressure')) {
     $exe = Join-Path $build ($n + '.exe')
     & $env:ComSpec /d /s /c ('"' + $exe + '" --help >NUL 2>&1')
     if ($LASTEXITCODE -ne 0) { throw ('help failed ' + $n) }
@@ -158,6 +160,44 @@ if ($LASTEXITCODE -ne 2 -or
     throw 'R6 malformed journal not denied'
 }
 $lines.Add('test_dbmem_watch=PASS')
+$pressure = Join-Path $build 'dbmem_pressure.exe'
+$pressureResult = @(& $pressure --interval-ms 100)
+if ($LASTEXITCODE -notin @(0,3,4) -or $pressureResult.Count -ne 10 -or
+    $pressureResult[1] -cnotmatch '^status=(OK|WARN|CRITICAL)$' -or
+    $pressureResult[2] -cnotmatch '^sample_levels=(OK|WARN|CRITICAL),(OK|WARN|CRITICAL),(OK|WARN|CRITICAL)$') {
+    throw 'R7 live memory pressure probe invalid'
+}
+$kv=@{}
+foreach($row in $pressureResult) {
+    $pair=$row.Split('=',2)
+    if($pair.Count -ne 2 -or $kv.ContainsKey($pair[0])) { throw 'R7 invalid key/value output' }
+    $kv[$pair[0]]=$pair[1]
+}
+$numbers=@('physical_total_bytes','physical_available_bytes','commit_total_pages','commit_limit_pages','commit_headroom_pages','memory_load_percent','sample_interval_ms','utc_filetime_100ns')
+foreach($name in $numbers) {
+    [uint64]$n=0
+    if(-not [uint64]::TryParse($kv[$name],[ref]$n)) { throw ('R7 invalid number '+$name) }
+}
+if ([uint64]$kv.physical_available_bytes -gt [uint64]$kv.physical_total_bytes -or
+    [uint64]$kv.commit_total_pages -gt [uint64]$kv.commit_limit_pages -or
+    ([uint64]$kv.commit_limit_pages - [uint64]$kv.commit_total_pages) -ne [uint64]$kv.commit_headroom_pages) {
+    throw 'R7 snapshot invariants failed'
+}
+$forcedWarn = @(& $pressure --interval-ms 100 --warn-physical-percent 99 --critical-physical-percent 1 --warn-commit-headroom-percent 99 --critical-commit-headroom-percent 1)
+if ($LASTEXITCODE -ne 3 -or $forcedWarn -cnotcontains 'status=WARN') {
+    throw 'R7 forced WARN contract failed'
+}
+$forcedCritical = @(& $pressure --interval-ms 100 --warn-physical-percent 99 --critical-physical-percent 98 --warn-commit-headroom-percent 99 --critical-commit-headroom-percent 98)
+if ($LASTEXITCODE -ne 4 -or $forcedCritical -cnotcontains 'status=CRITICAL') {
+    throw 'R7 forced CRITICAL contract failed'
+}
+foreach($bad in @('--interval-ms 99','--interval-ms 1001','--interval-ms +250','--warn-physical-percent 0',
+                  '--warn-physical-percent 20 --critical-physical-percent 20',
+                  '--warn-physical-percent 20 --warn-physical-percent 30')) {
+    & $env:ComSpec /d /s /c ('"' + $pressure + '" ' + $bad + ' >NUL 2>&1')
+    if ($LASTEXITCODE -ne 1) { throw ('R7 invalid CLI accepted '+$bad) }
+}
+$lines.Add('test_dbmem_pressure=PASS')
 foreach ($entry in $definitions) {
     $exe = Join-Path $build ($entry[1] + '.exe')
     $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $exe).Hash.ToLowerInvariant()
