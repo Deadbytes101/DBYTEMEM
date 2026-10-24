@@ -10,4 +10,3 @@ build-r10/
 build-r11/
 *.obj
 *.exe
-*.ps1
